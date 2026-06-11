@@ -23,6 +23,7 @@ jobs:
       # (WIN_CSC_LINK = base64 of the .pfx, WIN_CSC_KEY_PASSWORD); otherwise unsigned.
       # Publishes to GitHub Releases only when the run is on a v* tag (onTagOrDraft).
       - name: Build + (publish on tag)
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
@@ -55,6 +56,7 @@ jobs:
       # when APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID are set (the
       # afterSign hook skips gracefully otherwise). Publishes on a v* tag.
       - name: Build + (publish on tag)
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
