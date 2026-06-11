@@ -9,7 +9,8 @@
  */
 import {
   app, BrowserWindow, Tray, Menu, globalShortcut, shell, ipcMain,
-  desktopCapturer, screen, clipboard, nativeImage, Notification, type WebContents,
+  desktopCapturer, screen, clipboard, nativeImage, Notification, session,
+  systemPreferences, type WebContents,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import * as path from "node:path";
@@ -17,7 +18,9 @@ import * as path from "node:path";
 // The hosted app. Override for local testing: set VINCONY_APP_URL=http://localhost:3000
 const APP_URL = process.env.VINCONY_APP_URL || "https://app.vincony.com";
 const PROTOCOL = "vincony";
-const QUICK_ASK_HOTKEY = process.env.VINCONY_HOTKEY || "Alt+Space";
+// Ctrl/Cmd+Shift+Space — avoids the bare Alt+Space, which is Windows' system
+// window-menu shortcut and gets hijacked. Override with VINCONY_HOTKEY.
+const QUICK_ASK_HOTKEY = process.env.VINCONY_HOTKEY || "CommandOrControl+Shift+Space";
 const SCREENSHOT_HOTKEY = "CommandOrControl+Shift+S";
 const CLIPBOARD_HOTKEY = "CommandOrControl+Shift+V";
 
@@ -50,6 +53,30 @@ function hardenNavigation(wc: WebContents) {
   wc.on("will-navigate", (e, url) => {
     if (!isInternalUrl(url)) { e.preventDefault(); shell.openExternal(url); }
   });
+  // Server-side (3xx) redirects don't fire will-navigate; catch them too so an in-page
+  // redirect to an OAuth provider / Stripe is bounced to the system browser.
+  wc.on("will-redirect", (e, url) => {
+    if (!isInternalUrl(url)) { e.preventDefault(); shell.openExternal(url); }
+  });
+}
+
+// Let the hosted app use the mic (Voice Studio / voice input), notifications, and
+// clipboard — but ONLY for *.vincony.com content. Everything else is denied. Without
+// this, Electron denies getUserMedia by default and voice features silently fail.
+const ALLOWED_PERMISSIONS = new Set([
+  "media", "audioCapture", "notifications",
+  "clipboard-read", "clipboard-sanitized-write", "fullscreen", "pointerLock",
+]);
+function installPermissionHandlers() {
+  const ses = session.defaultSession;
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const url = details?.requestingUrl || wc?.getURL() || "";
+    callback(isInternalUrl(url) && ALLOWED_PERMISSIONS.has(permission));
+  });
+  // getUserMedia also consults the synchronous check handler.
+  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) =>
+    isInternalUrl(requestingOrigin) && ALLOWED_PERMISSIONS.has(permission)
+  );
 }
 
 function createMainWindow() {
@@ -193,6 +220,16 @@ function createTray() {
 /* ── Screenshot → ask ────────────────────────────────────────────────── */
 async function captureAndAsk() {
   try {
+    // macOS gates screen capture behind the Screen Recording permission; without it
+    // getSources() returns a black frame. We can't prompt programmatically, so guide
+    // the user to enable it (the OS lists the app after the first attempt).
+    if (process.platform === "darwin" &&
+        systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+      notify("Enable Screen Recording",
+        "Allow Vincony in System Settings > Privacy & Security > Screen Recording, then try again.");
+      shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+      return;
+    }
     const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const { width, height } = disp.size;
     const scale = disp.scaleFactor || 1;
@@ -205,10 +242,17 @@ async function captureAndAsk() {
     const dataUrl = src.thumbnail.toDataURL();
     showMain();
     const wc = mainWindow!.webContents;
-    const deliver = () => wc.send("incoming-image", { dataUrl, name: "screenshot.png" });
-    if (wc.isLoading()) wc.once("did-finish-load", deliver); else deliver();
-    // Make sure we land on the chat so the page-side reader picks the image up.
-    setTimeout(() => wc.loadURL(appOrigin() + "/os/chat"), 60);
+    // Stage the image into sessionStorage on the CURRENT app page, THEN navigate to
+    // /os/chat (same origin, so sessionStorage survives). This guarantees the image is
+    // present before the chat view mounts and reads it once — no IPC/navigation race.
+    const stageAndGo = async () => {
+      const arg = JSON.stringify(JSON.stringify({ dataUrl, name: "screenshot.png" }));
+      try {
+        await wc.executeJavaScript(`sessionStorage.setItem("vinc_incoming_image", ${arg})`);
+      } catch { /* page not ready / storage blocked — navigate anyway */ }
+      wc.loadURL(appOrigin() + "/os/chat");
+    };
+    if (wc.isLoading()) wc.once("did-finish-load", stageAndGo); else stageAndGo();
   } catch (e) {
     notify("Screenshot failed", String(e instanceof Error ? e.message : e));
   }
@@ -231,15 +275,21 @@ function handleDeepLink(url?: string) {
   if (!url || !url.startsWith(`${PROTOCOL}://`)) return;
   try {
     const u = new URL(url);
-    // vincony://auth?code=… → bounce the webview to the hosted /auth so the PKCE
-    // code is exchanged in the same session that started the OAuth flow.
-    const targetPath = "/" + (u.hostname || "auth") + (u.search || "");
-    showMain(targetPath.replace("//", "/"));
+    // Bounce the webview to the hosted path so the PKCE code is exchanged in the same
+    // session that started the OAuth flow. Preserve any sub-path:
+    //   vincony://auth?code=…          → /auth?code=…
+    //   vincony://auth/callback?code=… → /auth/callback?code=…
+    const host = u.hostname ? `/${u.hostname}` : "";
+    const pathname = u.pathname && u.pathname !== "/" ? u.pathname : "";
+    showMain(`${host}${pathname}${u.search || ""}` || "/auth");
   } catch { /* ignore malformed deep links */ }
 }
 
 /* ── Auto-update ─────────────────────────────────────────────────────── */
 function initAutoUpdate() {
+  // electron-updater only works in a packaged app (it reads app-update.yml). Skip in
+  // dev to avoid noisy "cannot find update" errors.
+  if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.on("update-available", (i) => notify("Update available", `Downloading Vincony ${i.version}…`));
   autoUpdater.on("update-downloaded", (i) => {
@@ -283,10 +333,16 @@ if (!gotLock) {
   app.on("open-url", (e, url) => { e.preventDefault(); handleDeepLink(url); }); // macOS
 
   app.whenReady().then(() => {
+    installPermissionHandlers();
     createMainWindow();
     createTray();
     initAutoUpdate();
-    globalShortcut.register(QUICK_ASK_HOTKEY, toggleQuickAsk);
+    // register() returns false if the OS/another app already owns the combo — tell the
+    // user instead of silently doing nothing.
+    if (!globalShortcut.register(QUICK_ASK_HOTKEY, toggleQuickAsk)) {
+      notify("Quick-ask hotkey unavailable",
+        `${QUICK_ASK_HOTKEY} is in use by another app. Set VINCONY_HOTKEY to change it.`);
+    }
     globalShortcut.register(SCREENSHOT_HOTKEY, captureAndAsk);
     globalShortcut.register(CLIPBOARD_HOTKEY, clipboardAsk);
     // A deep link can arrive in the initial argv (cold start) on Windows.

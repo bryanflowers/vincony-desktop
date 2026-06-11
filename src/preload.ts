@@ -26,13 +26,5 @@ contextBridge.exposeInMainWorld("vincony", {
   openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
 });
 
-// 3) Screenshot → ask handoff: the main process sends the captured image; stash it in
-//    the page's sessionStorage so the chat view picks it up on load (decoupled from
-//    React state — same pattern the web app uses for nav-state hand-offs).
-ipcRenderer.on("incoming-image", (_e, payload: { dataUrl: string; name?: string }) => {
-  try {
-    window.sessionStorage.setItem("vinc_incoming_image", JSON.stringify(payload));
-  } catch {
-    /* quota / unavailable — ignore */
-  }
-});
+// (The screenshot → ask hand-off is staged directly into sessionStorage by the main
+//  process via executeJavaScript before navigating to /os/chat — no IPC needed here.)
