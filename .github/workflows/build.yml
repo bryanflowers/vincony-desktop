@@ -72,7 +72,15 @@ jobs:
           # drop the empty signing vars so the validation build is cleanly unsigned.
           [ -z "$CSC_LINK" ] && unset CSC_LINK CSC_KEY_PASSWORD || true
           npm run build
-          npx electron-builder --mac --publish onTagOrDraft
+          # `hdiutil convert` flakes intermittently on GitHub macOS runners (the disk
+          # image device gets busy), failing dmg creation. Retry a few times.
+          ok=
+          for attempt in 1 2 3; do
+            if npx electron-builder --mac --publish onTagOrDraft; then ok=1; break; fi
+            echo "::warning::electron-builder --mac attempt $attempt failed (hdiutil flake?); retrying in 15s"
+            sleep 15
+          done
+          [ -n "$ok" ] || { echo "::error::electron-builder --mac failed after 3 attempts"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
