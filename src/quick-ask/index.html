@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+  <title>Vincony Quick Ask</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { background: transparent; -webkit-user-select: none; user-select: none; overflow: hidden; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; }
+    .bar {
+      margin: 14px;
+      background: rgba(16, 16, 26, 0.92);
+      border: 1px solid rgba(124, 58, 237, 0.45);
+      border-radius: 16px;
+      box-shadow: 0 18px 50px -12px rgba(0,0,0,0.65);
+      backdrop-filter: blur(18px);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+    }
+    .logo {
+      width: 26px; height: 26px; border-radius: 8px; flex: none;
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 800; font-size: 14px;
+    }
+    input {
+      flex: 1; background: transparent; border: 0; outline: none;
+      color: #f5f3ff; font-size: 18px; -webkit-user-select: text; user-select: text;
+    }
+    input::placeholder { color: rgba(245,243,255,0.45); }
+    .hint { font-size: 11px; color: rgba(245,243,255,0.4); white-space: nowrap; }
+    kbd {
+      font-family: inherit; font-size: 10px; color: rgba(245,243,255,0.7);
+      background: rgba(255,255,255,0.08); border-radius: 5px; padding: 2px 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="logo">V</div>
+    <input id="q" type="text" autofocus placeholder="Ask Vincony anything…" maxlength="4000" />
+    <span class="hint"><kbd>Enter</kbd> ask &nbsp; <kbd>Esc</kbd> close</span>
+  </div>
+  <script>
+    const input = document.getElementById("q");
+    input.focus();
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const v = input.value.trim();
+        if (v) window.qa.submit(v);
+        input.value = "";
+      } else if (e.key === "Escape") {
+        input.value = "";
+        window.qa.close();
+      }
+    });
+    // Re-focus whenever the window is shown.
+    window.addEventListener("focus", () => input.focus());
+  </script>
+</body>
+</html>

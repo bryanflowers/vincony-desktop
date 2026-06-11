@@ -1,0 +1,49 @@
+appId: com.vincony.desktop
+productName: Vincony
+copyright: © Vincony AI Ltd
+
+directories:
+  output: release
+  buildResources: build
+
+# Only ship the compiled main/preloads + icons + the production deps (electron-updater).
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.ts"
+  - "!src/**/*"
+
+# Auto-update + download feed. electron-builder writes app-update.yml from this so
+# electron-updater knows where to look. Replace owner/repo if the repo name changes.
+publish:
+  provider: github
+  owner: bryanflowers
+  repo: vincony-desktop
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  # Code-signing is driven by env vars in CI (CSC_LINK = base64 .pfx, CSC_KEY_PASSWORD).
+  # When they're absent (local dev) the build is simply unsigned.
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Vincony
+  # Fixed name so the website can deep-link the newest installer:
+  # https://github.com/bryanflowers/vincony-desktop/releases/latest/download/VinconySetup.exe
+  artifactName: VinconySetup.exe
+
+mac:
+  # Phase 2 — requires Apple Developer + a macOS runner + notarization.
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  hardenedRuntime: true

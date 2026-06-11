@@ -1,0 +1,40 @@
+name: Build & Release (Windows)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Builds the NSIS installer. Code-signs when the cert secrets are present
+      # (WIN_CSC_LINK = base64 of the .pfx, WIN_CSC_KEY_PASSWORD); otherwise unsigned.
+      # Publishes to GitHub Releases only when the run is on a v* tag (onTagOrDraft).
+      - name: Build + (publish on tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          npm run build
+          npx electron-builder --win --publish onTagOrDraft
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vincony-windows-installer
+          path: release/*.exe
+          if-no-files-found: warn

@@ -1,0 +1,27 @@
+{
+  "name": "vincony-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vincony desktop app for Windows and macOS — the unified AI platform (800+ models, 70+ tools) with a global quick-ask hotkey, tray mini-chat, and screenshot-to-ask.",
+  "author": "Vincony AI Ltd",
+  "license": "UNLICENSED",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --win",
+    "release": "npm run build && electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.8.3"
+  }
+}
