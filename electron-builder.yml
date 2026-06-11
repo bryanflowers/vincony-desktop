@@ -46,7 +46,10 @@ afterSign: scripts/notarize.cjs
 mac:
   target:
     - target: dmg
-      arch: [arm64, x64]
+      # One universal binary (arm64 + x64) → a single Vincony.dmg that runs natively
+      # on Apple Silicon and Intel. Avoids two arch builds writing to the same fixed
+      # artifactName concurrently (which raced hdiutil and broke dmg creation on CI).
+      arch: [universal]
   icon: build/icon.png # electron-builder generates the .icns from this 512px source
   category: public.app-category.productivity
   hardenedRuntime: true
