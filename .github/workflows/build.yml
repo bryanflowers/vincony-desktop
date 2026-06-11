@@ -1,4 +1,4 @@
-name: Build & Release (Windows)
+name: Build & Release
 
 on:
   push:
@@ -13,12 +13,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
       - run: npm ci
 
       # Builds the NSIS installer. Code-signs when the cert secrets are present
@@ -37,4 +35,39 @@ jobs:
         with:
           name: vincony-windows-installer
           path: release/*.exe
+          if-no-files-found: warn
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # Builds the universal-ish dmg (arm64 + x64). Code-signs with the Developer ID
+      # when MAC_CSC_LINK (base64 .p12) + MAC_CSC_KEY_PASSWORD are set, and notarizes
+      # when APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID are set (the
+      # afterSign hook skips gracefully otherwise). Publishes on a v* tag.
+      - name: Build + (publish on tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Don't let electron-builder hunt the runner keychain for an identity when no
+          # cert is supplied — that keeps validation (no-secret) builds unsigned, not failed.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
+        run: |
+          npm run build
+          npx electron-builder --mac --publish onTagOrDraft
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vincony-macos-dmg
+          path: release/*.dmg
           if-no-files-found: warn

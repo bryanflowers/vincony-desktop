@@ -39,11 +39,22 @@ nsis:
   # https://github.com/bryanflowers/vincony-desktop/releases/latest/download/VinconySetup.exe
   artifactName: VinconySetup.exe
 
+# Notarization runs in an afterSign hook that no-ops when the Apple creds are
+# absent (so an unsigned validation build still succeeds).
+afterSign: scripts/notarize.cjs
+
 mac:
-  # Phase 2 — requires Apple Developer + a macOS runner + notarization.
   target:
     - target: dmg
       arch: [arm64, x64]
-  icon: build/icon.icns
+  icon: build/icon.png # electron-builder generates the .icns from this 512px source
   category: public.app-category.productivity
   hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Signing is driven by env in CI (CSC_LINK = base64 .p12, CSC_KEY_PASSWORD);
+  # notarization by APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID.
+
+dmg:
+  artifactName: Vincony.dmg # stable: releases/latest/download/Vincony.dmg
