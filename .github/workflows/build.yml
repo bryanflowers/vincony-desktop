@@ -28,6 +28,9 @@ jobs:
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
+          # An empty CSC_LINK is read as a missing cert FILE — drop it so the build
+          # is cleanly unsigned when no cert secret is set.
+          [ -z "$CSC_LINK" ] && unset CSC_LINK CSC_KEY_PASSWORD || true
           npm run build
           npx electron-builder --win --publish onTagOrDraft
 
@@ -63,6 +66,9 @@ jobs:
           # cert is supplied — that keeps validation (no-secret) builds unsigned, not failed.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
         run: |
+          # An empty CSC_LINK is read as a missing cert FILE on macOS ("not a file") —
+          # drop the empty signing vars so the validation build is cleanly unsigned.
+          [ -z "$CSC_LINK" ] && unset CSC_LINK CSC_KEY_PASSWORD || true
           npm run build
           npx electron-builder --mac --publish onTagOrDraft
 
