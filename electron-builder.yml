@@ -56,6 +56,11 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # macOS aborts the app the moment it touches the mic/camera unless Info.plist carries
+  # a usage description. Voice Studio / voice input need the mic, so declare both.
+  extendInfo:
+    NSMicrophoneUsageDescription: Vincony uses your microphone for voice input and Voice Studio.
+    NSCameraUsageDescription: Vincony uses your camera for photo and video features when you choose to.
   # Signing is driven by env in CI (CSC_LINK = base64 .p12, CSC_KEY_PASSWORD);
   # notarization by APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID.
 
