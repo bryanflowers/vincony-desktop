@@ -198,7 +198,11 @@ function toggleMiniChat() {
 }
 
 function createTray() {
-  tray = new Tray(icon().resize({ width: 18, height: 18 }));
+  const trayIcon = icon().resize({ width: 18, height: 18 });
+  // On macOS a template image renders as a monochrome mask that adapts to light/dark menu
+  // bars; a colored icon looks out of place there. (No-op on Windows/Linux.)
+  if (process.platform === "darwin") trayIcon.setTemplateImage(true);
+  tray = new Tray(trayIcon);
   tray.setToolTip("Vincony");
   const menu = Menu.buildFromTemplate([
     { label: "Open Vincony", click: () => showMain() },
@@ -233,20 +237,27 @@ async function captureAndAsk() {
     const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const { width, height } = disp.size;
     const scale = disp.scaleFactor || 1;
+    // Cap the long side at 1920px and encode JPEG. A full-res 4K PNG data URL exceeds the
+    // ~5MB sessionStorage quota used to hand the image to the chat view, so setItem would
+    // throw and the screenshot would be silently dropped. 1920px JPEG is ~5-10x smaller —
+    // comfortably under quota and plenty of detail for "what is this?".
+    const fullW = Math.round(width * scale);
+    const fullH = Math.round(height * scale);
+    const ratio = Math.min(1, 1920 / Math.max(fullW, fullH));
     const sources = await desktopCapturer.getSources({
       types: ["screen"],
-      thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) },
+      thumbnailSize: { width: Math.round(fullW * ratio), height: Math.round(fullH * ratio) },
     });
     const src = sources.find((s) => String(s.display_id) === String(disp.id)) || sources[0];
     if (!src) return;
-    const dataUrl = src.thumbnail.toDataURL();
+    const dataUrl = "data:image/jpeg;base64," + src.thumbnail.toJPEG(85).toString("base64");
     showMain();
     const wc = mainWindow!.webContents;
     // Stage the image into sessionStorage on the CURRENT app page, THEN navigate to
     // /os/chat (same origin, so sessionStorage survives). This guarantees the image is
     // present before the chat view mounts and reads it once — no IPC/navigation race.
     const stageAndGo = async () => {
-      const arg = JSON.stringify(JSON.stringify({ dataUrl, name: "screenshot.png" }));
+      const arg = JSON.stringify(JSON.stringify({ dataUrl, name: "screenshot.jpg" }));
       try {
         await wc.executeJavaScript(`sessionStorage.setItem("vinc_incoming_image", ${arg})`);
       } catch { /* page not ready / storage blocked — navigate anyway */ }
@@ -333,18 +344,25 @@ if (!gotLock) {
   app.on("open-url", (e, url) => { e.preventDefault(); handleDeepLink(url); }); // macOS
 
   app.whenReady().then(() => {
+    // Windows attributes toast notifications by AppUserModelID; set it (matching the NSIS
+    // appId) so Notification toasts show as "Vincony" instead of being dropped/generic.
+    if (process.platform === "win32") app.setAppUserModelId("com.vincony.desktop");
     installPermissionHandlers();
     createMainWindow();
     createTray();
     initAutoUpdate();
-    // register() returns false if the OS/another app already owns the combo — tell the
-    // user instead of silently doing nothing.
-    if (!globalShortcut.register(QUICK_ASK_HOTKEY, toggleQuickAsk)) {
-      notify("Quick-ask hotkey unavailable",
-        `${QUICK_ASK_HOTKEY} is in use by another app. Set VINCONY_HOTKEY to change it.`);
+    // register() returns false if the OS/another app already owns the combo. Collect any
+    // failures and tell the user once, instead of silently doing nothing.
+    const shortcuts: Array<[string, () => void]> = [
+      [QUICK_ASK_HOTKEY, toggleQuickAsk],
+      [SCREENSHOT_HOTKEY, captureAndAsk],
+      [CLIPBOARD_HOTKEY, clipboardAsk],
+    ];
+    const failed = shortcuts.filter(([accel, fn]) => !globalShortcut.register(accel, fn)).map(([a]) => a);
+    if (failed.length) {
+      notify("Some hotkeys are unavailable",
+        `${failed.join(", ")} ${failed.length > 1 ? "are" : "is"} in use by another app. Set VINCONY_HOTKEY to change quick-ask.`);
     }
-    globalShortcut.register(SCREENSHOT_HOTKEY, captureAndAsk);
-    globalShortcut.register(CLIPBOARD_HOTKEY, clipboardAsk);
     // A deep link can arrive in the initial argv (cold start) on Windows.
     const initialDeepLink = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`));
     if (initialDeepLink) handleDeepLink(initialDeepLink);
